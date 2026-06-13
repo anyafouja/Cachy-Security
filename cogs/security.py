@@ -41,16 +41,10 @@ class Security(commands.Cog):
         except Exception:
             pass
 
-    async def warn(self, ctx_or_msg, text, delete_after=8):
-        if isinstance(ctx_or_msg, commands.Context):
-            channel = ctx_or_msg.channel
-        else:
-            channel = ctx_or_msg.channel
+    async def warn(self, msg, text, delete_after=8):
         try:
-            embed = discord.Embed(
-                description=text, color=0xED4245
-            )
-            m = await channel.send(embed=embed)
+            embed = discord.Embed(description=text, color=0xED4245)
+            m = await msg.channel.send(embed=embed)
             await m.delete(delay=delete_after)
         except Exception:
             pass
@@ -95,7 +89,7 @@ class Security(commands.Cog):
             log_ch = discord.utils.get(member.guild.text_channels, name='mod-log')
             if log_ch:
                 embed = discord.Embed(
-                    title='⚠️ Potential Raid Detected',
+                    title='Potential Raid Detected',
                     description=f'{len(self.join_log[gid])} joins in {RAID_WINDOW}s',
                     color=0xED4245
                 )
@@ -103,41 +97,41 @@ class Security(commands.Cog):
             await asyncio.sleep(120)
             self.raid_alerted.discard(gid)
 
-    @commands.command(name='filter-add')
+    @commands.hybrid_command(name='filteradd', description='Add word to filter')
     @commands.has_permissions(manage_messages=True)
-    async def filter_add(self, ctx, *, word):
+    async def filter_add(self, ctx: commands.Context, word: str):
         word = word.lower().strip()
         if word in self.banned_words:
-            await ctx.send('already in filter')
+            await ctx.send('already in filter', ephemeral=True)
             return
         self.banned_words.append(word)
         self.data['banned_words'] = self.banned_words
         save_data(self.data)
         await ctx.send(f'`{word}` added to filter')
 
-    @commands.command(name='filter-remove')
+    @commands.hybrid_command(name='filterremove', description='Remove word from filter')
     @commands.has_permissions(manage_messages=True)
-    async def filter_remove(self, ctx, *, word):
+    async def filter_remove(self, ctx: commands.Context, word: str):
         word = word.lower().strip()
         if word not in self.banned_words:
-            await ctx.send('not in filter')
+            await ctx.send('not in filter', ephemeral=True)
             return
         self.banned_words.remove(word)
         self.data['banned_words'] = self.banned_words
         save_data(self.data)
         await ctx.send(f'`{word}` removed from filter')
 
-    @commands.command(name='filter-list')
+    @commands.hybrid_command(name='filterlist', description='Show all banned words')
     @commands.has_permissions(manage_messages=True)
-    async def filter_list(self, ctx):
+    async def filter_list(self, ctx: commands.Context):
         if not self.banned_words:
             await ctx.send('filter is empty')
             return
         await ctx.send('banned words: ' + ', '.join(f'`{w}`' for w in self.banned_words))
 
-    @commands.command(name='whitelist')
+    @commands.hybrid_command(name='whitelist', description='Toggle whitelist for this channel')
     @commands.has_permissions(manage_messages=True)
-    async def whitelist_channel(self, ctx):
+    async def filter_whitelist(self, ctx: commands.Context):
         cid = ctx.channel.id
         if cid in self.whitelisted:
             self.whitelisted.remove(cid)
@@ -148,9 +142,9 @@ class Security(commands.Cog):
         self.data['whitelisted_channels'] = self.whitelisted
         save_data(self.data)
 
-    @commands.command(name='security-stats')
+    @commands.hybrid_command(name='filterstats', description='Show security stats')
     @commands.has_permissions(manage_messages=True)
-    async def security_stats(self, ctx):
+    async def filter_stats(self, ctx: commands.Context):
         embed = discord.Embed(title='Security Stats', color=0x5865F2)
         embed.add_field(name='Banned Words', value=str(len(self.banned_words)))
         embed.add_field(name='Whitelisted Channels', value=str(len(self.whitelisted)))
