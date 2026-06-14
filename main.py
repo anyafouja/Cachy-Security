@@ -36,19 +36,8 @@ async def help_cmd(ctx: commands.Context):
     embed.add_field(name='/filterlist', value='Show all banned words', inline=False)
     embed.add_field(name='/whitelist', value='Toggle whitelist for this channel', inline=False)
     embed.add_field(name='/filterstats', value='Show security stats', inline=False)
-    embed.add_field(name='/sync', value='Sync slash commands (admin only)', inline=False)
     embed.set_footer(text='Some commands require Manage Messages permission')
     await ctx.send(embed=embed)
-
-@bot.hybrid_command(name='sync', description='Sync slash commands manually')
-@commands.has_permissions(administrator=True)
-async def sync_cmd(ctx: commands.Context):
-    await ctx.defer(ephemeral=True)
-    try:
-        await bot.tree.sync(guild=ctx.guild)
-        await ctx.send('Synced!', ephemeral=True)
-    except Exception as e:
-        await ctx.send(f'Error: {e}', ephemeral=True)
 
 async def main():
     async with bot:
