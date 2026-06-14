@@ -18,11 +18,14 @@ def load_data():
     if os.path.isfile(DATA_FILE):
         with open(DATA_FILE) as f:
             return json.load(f)
-    return {'banned_words': [], 'whitelisted_channels': []}
+    return {}
 
 def save_data(data):
     with open(DATA_FILE, 'w') as f:
         json.dump(data, f)
+
+def guild_data(data, gid):
+    return data.setdefault(str(gid), {'banned_words': [], 'whitelisted_channels': []})
 
 
 class Security(commands.Cog):
@@ -32,8 +35,9 @@ class Security(commands.Cog):
         self.join_log = defaultdict(list)
         self.raid_alerted = set()
         self.data = load_data()
-        self.banned_words = self.data.get('banned_words', [])
-        self.whitelisted = self.data.get('whitelisted_channels', [])
+
+    def get_conf(self, gid):
+        return guild_data(self.data, gid)
 
     async def safe_delete(self, msg, delay=0):
         try:
@@ -53,7 +57,8 @@ class Security(commands.Cog):
     async def on_message(self, msg):
         if msg.author.bot or not msg.guild:
             return
-        if msg.channel.id in self.whitelisted:
+        conf = self.get_conf(msg.guild.id)
+        if msg.channel.id in conf['whitelisted_channels']:
             return
 
         uid = msg.author.id
@@ -70,9 +75,9 @@ class Security(commands.Cog):
             await self.warn(msg, f'{msg.author.mention} dilarang kirim invite link!')
             return
 
-        if self.banned_words:
+        if conf['banned_words']:
             lower = msg.content.lower()
-            for word in self.banned_words:
+            for word in conf['banned_words']:
                 if word in lower:
                     await self.safe_delete(msg)
                     await self.warn(msg, f'{msg.author.mention} pesan mengandung kata terlarang!')
@@ -101,11 +106,11 @@ class Security(commands.Cog):
     @commands.has_permissions(manage_messages=True)
     async def filter_add(self, ctx: commands.Context, word: str):
         word = word.lower().strip()
-        if word in self.banned_words:
+        conf = self.get_conf(ctx.guild.id)
+        if word in conf['banned_words']:
             await ctx.send('already in filter', ephemeral=True)
             return
-        self.banned_words.append(word)
-        self.data['banned_words'] = self.banned_words
+        conf['banned_words'].append(word)
         save_data(self.data)
         await ctx.send(f'`{word}` added to filter')
 
@@ -113,41 +118,43 @@ class Security(commands.Cog):
     @commands.has_permissions(manage_messages=True)
     async def filter_remove(self, ctx: commands.Context, word: str):
         word = word.lower().strip()
-        if word not in self.banned_words:
+        conf = self.get_conf(ctx.guild.id)
+        if word not in conf['banned_words']:
             await ctx.send('not in filter', ephemeral=True)
             return
-        self.banned_words.remove(word)
-        self.data['banned_words'] = self.banned_words
+        conf['banned_words'].remove(word)
         save_data(self.data)
         await ctx.send(f'`{word}` removed from filter')
 
     @commands.hybrid_command(name='filterlist', description='Show all banned words')
     @commands.has_permissions(manage_messages=True)
     async def filter_list(self, ctx: commands.Context):
-        if not self.banned_words:
+        conf = self.get_conf(ctx.guild.id)
+        if not conf['banned_words']:
             await ctx.send('filter is empty')
             return
-        await ctx.send('banned words: ' + ', '.join(f'`{w}`' for w in self.banned_words))
+        await ctx.send('banned words: ' + ', '.join(f'`{w}`' for w in conf['banned_words']))
 
     @commands.hybrid_command(name='whitelist', description='Toggle whitelist for this channel')
     @commands.has_permissions(manage_messages=True)
     async def filter_whitelist(self, ctx: commands.Context):
+        conf = self.get_conf(ctx.guild.id)
         cid = ctx.channel.id
-        if cid in self.whitelisted:
-            self.whitelisted.remove(cid)
+        if cid in conf['whitelisted_channels']:
+            conf['whitelisted_channels'].remove(cid)
             await ctx.send('channel removed from whitelist')
         else:
-            self.whitelisted.append(cid)
+            conf['whitelisted_channels'].append(cid)
             await ctx.send('channel added to whitelist')
-        self.data['whitelisted_channels'] = self.whitelisted
         save_data(self.data)
 
     @commands.hybrid_command(name='filterstats', description='Show security stats')
     @commands.has_permissions(manage_messages=True)
     async def filter_stats(self, ctx: commands.Context):
+        conf = self.get_conf(ctx.guild.id)
         embed = discord.Embed(title='Security Stats', color=0x5865F2)
-        embed.add_field(name='Banned Words', value=str(len(self.banned_words)))
-        embed.add_field(name='Whitelisted Channels', value=str(len(self.whitelisted)))
+        embed.add_field(name='Banned Words', value=str(len(conf['banned_words'])))
+        embed.add_field(name='Whitelisted Channels', value=str(len(conf['whitelisted_channels'])))
         embed.add_field(name='Active Spam Trackers', value=str(len(self.spam_log)))
         await ctx.send(embed=embed)
 
