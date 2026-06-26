@@ -2,10 +2,11 @@ import re
 import os
 import json
 import time
+import base64
+import urllib.request
 import asyncio
 from collections import defaultdict
 from datetime import datetime, timedelta
-import aiohttp
 import discord
 from discord.ext import commands
 
@@ -32,36 +33,63 @@ def save_data(data):
     now = time.time()
     if now - _last_push > 10:
         _last_push = now
-        asyncio.ensure_future(push_data())
+        push_data()
 
-async def push_data():
+def push_data():
     token = os.getenv('GH_TOKEN') or os.getenv('GITHUB_TOKEN')
     if not token:
         return
     repo = os.getenv('GITHUB_REPOSITORY', 'anyafouja/Cachy-Security')
     path = 'cogs/security_data.json'
     url = f'https://api.github.com/repos/{repo}/contents/{path}'
-    async with aiohttp.ClientSession() as sess:
-        async with sess.get(url, headers={'Authorization': f'token {token}', 'Accept': 'application/vnd.github.v3+json'}) as r:
-            if r.status == 200:
-                existing = await r.json()
-                sha = existing['sha']
-            else:
-                sha = None
-        with open(DATA_FILE) as f:
-            content = f.read()
-        import base64
-        body = {
-            'message': 'auto-update filter data',
-            'content': base64.b64encode(content.encode()).decode(),
-            'sha': sha,
-        }
-        async with sess.put(url, json=body, headers={'Authorization': f'token {token}', 'Accept': 'application/vnd.github.v3+json'}) as r:
-            if r.status not in (200, 201):
-                print(f'push_data failed: {r.status}')
+    req = urllib.request.Request(url, headers={'Authorization': f'token {token}', 'Accept': 'application/vnd.github.v3+json'})
+    sha = None
+    try:
+        with urllib.request.urlopen(req) as r:
+            data = json.loads(r.read())
+            sha = data['sha']
+    except Exception:
+        pass
+    with open(DATA_FILE) as f:
+        content = f.read()
+    body = json.dumps({
+        'message': 'auto-update filter data',
+        'content': base64.b64encode(content.encode()).decode(),
+        'sha': sha,
+    }).encode()
+    req2 = urllib.request.Request(url, data=body, method='PUT', headers={
+        'Authorization': f'token {token}', 'Content-Type': 'application/json',
+        'Accept': 'application/vnd.github.v3+json',
+    })
+    try:
+        with urllib.request.urlopen(req2) as r:
+            print(f'push_data OK: {r.status}')
+    except Exception as e:
+        print(f'push_data failed: {e}')
 
 def guild_data(data, gid):
     return data.setdefault(str(gid), {'banned_words': [], 'whitelisted_channels': []})
+
+
+def fetch_latest():
+    """Pull security_data.json from GitHub API. Fallback ke local file."""
+    token = os.getenv('GH_TOKEN') or os.getenv('GITHUB_TOKEN')
+    if token:
+        repo = os.getenv('GITHUB_REPOSITORY', 'anyafouja/Cachy-Security')
+        url = f'https://api.github.com/repos/{repo}/contents/cogs/security_data.json'
+        try:
+            req = urllib.request.Request(url, headers={'Authorization': f'token {token}', 'Accept': 'application/vnd.github.v3+json'})
+            with urllib.request.urlopen(req) as r:
+                data = json.loads(r.read())
+                raw = base64.b64decode(data['content']).decode()
+                return json.loads(raw)
+        except Exception:
+            pass
+    # fallback
+    if os.path.isfile(DATA_FILE):
+        with open(DATA_FILE) as f:
+            return json.load(f)
+    return {}
 
 
 class Security(commands.Cog):
@@ -70,7 +98,10 @@ class Security(commands.Cog):
         self.spam_log = defaultdict(list)
         self.join_log = defaultdict(list)
         self.raid_alerted = set()
-        self.data = load_data()
+        self.data = fetch_latest()
+        # sync local file
+        with open(DATA_FILE, 'w') as f:
+            json.dump(self.data, f)
 
     def get_conf(self, gid):
         return guild_data(self.data, gid)
