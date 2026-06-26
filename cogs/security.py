@@ -12,7 +12,7 @@ SPAM_THRESHOLD = 5
 RAID_WINDOW = 30
 RAID_THRESHOLD = 5
 INVITE_RE = re.compile(r'(?:discord\.(?:gg|io|me|com\/invite)\/[\w-]+)', re.I)
-DATA_FILE = 'security_data.json'
+DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'security_data.json')
 
 def load_data():
     if os.path.isfile(DATA_FILE):
