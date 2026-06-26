@@ -1,9 +1,11 @@
 import re
 import os
 import json
+import time
 import asyncio
 from collections import defaultdict
 from datetime import datetime, timedelta
+import aiohttp
 import discord
 from discord.ext import commands
 
@@ -14,6 +16,9 @@ RAID_THRESHOLD = 5
 INVITE_RE = re.compile(r'(?:discord\.(?:gg|io|me|com\/invite)\/[\w-]+)', re.I)
 DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'security_data.json')
 
+# debounce push: only push once per 10s
+_last_push = 0
+
 def load_data():
     if os.path.isfile(DATA_FILE):
         with open(DATA_FILE) as f:
@@ -21,8 +26,39 @@ def load_data():
     return {}
 
 def save_data(data):
+    global _last_push
     with open(DATA_FILE, 'w') as f:
         json.dump(data, f)
+    now = time.time()
+    if now - _last_push > 10:
+        _last_push = now
+        asyncio.ensure_future(push_data())
+
+async def push_data():
+    token = os.getenv('GH_TOKEN') or os.getenv('GITHUB_TOKEN')
+    if not token:
+        return
+    repo = os.getenv('GITHUB_REPOSITORY', 'anyafouja/Cachy-Security')
+    path = 'cogs/security_data.json'
+    url = f'https://api.github.com/repos/{repo}/contents/{path}'
+    async with aiohttp.ClientSession() as sess:
+        async with sess.get(url, headers={'Authorization': f'token {token}', 'Accept': 'application/vnd.github.v3+json'}) as r:
+            if r.status == 200:
+                existing = await r.json()
+                sha = existing['sha']
+            else:
+                sha = None
+        with open(DATA_FILE) as f:
+            content = f.read()
+        import base64
+        body = {
+            'message': 'auto-update filter data',
+            'content': base64.b64encode(content.encode()).decode(),
+            'sha': sha,
+        }
+        async with sess.put(url, json=body, headers={'Authorization': f'token {token}', 'Accept': 'application/vnd.github.v3+json'}) as r:
+            if r.status not in (200, 201):
+                print(f'push_data failed: {r.status}')
 
 def guild_data(data, gid):
     return data.setdefault(str(gid), {'banned_words': [], 'whitelisted_channels': []})
